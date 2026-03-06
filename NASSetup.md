@@ -2,8 +2,8 @@ We required an operating system that could run multiple services - such as NAS, 
 
 Once Ubuntu was installed, the first step was setting up the harddisk that will later become the NAS's storage drive. We first had to format the drive which was done with the following commands:
 
-'''
+```
 sudo fdisk /dev/sdb1
 n - new partition
 w - write
-'''
+```
