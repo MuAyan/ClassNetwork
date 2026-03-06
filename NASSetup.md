@@ -3,7 +3,12 @@ We required an operating system that could run multiple services - such as NAS, 
 Once Ubuntu was installed, the first step was setting up the harddisk that will later become the NAS's storage drive. We first had to format the drive which was done with the following commands:
 
 ```
-sudo fdisk /dev/sdb1
+sudo fdisk /dev/sdb
+```
 n - new partition
 w - write
+
+Format it was ext4 (basic filesystem format, works best for nextcloud)
+```
+sudo mkfs.ext4 /dev/sdb1
 ```
