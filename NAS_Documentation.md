@@ -125,22 +125,6 @@ The folder then appears in the Nextcloud file browser for assigned users.
 
 ---
 
-## Access Control & User Management
-
-### Groups
-
-Nextcloud uses **groups** to control who sees what. A `guests` group was created to separate limited-access users from administrators.
-
-### Storage Visibility
-
-In the External Storage settings, each storage entry can be assigned to specific users or groups. By assigning `lab118` only to selected groups, other users cannot see or access it.
-
-### Folder-Level Sharing
-
-For more granular control, specific subfolders (e.g., `GuestShare/`) were shared with the guest group rather than exposing the entire NAS root. This ensures guests only see what they are explicitly given.
-
----
-
 ## Public Sharing
 
 A public share link was created for the `lab118` folder, accessible without a Nextcloud account.
