@@ -179,13 +179,15 @@ sudo snap connect nextcloud:removable-media
 
 Once Snap had access, the NAS folder was registered inside Nextcloud:
 
-1. Navigate to **Admin → Settings → External Storage**
-2. Enable the **External Storage Support** app
-3. Add a new storage entry:
+1. Click top-right user icon and click apps.
+2. Navigate to Disabled apps in the left-hand menu
+3. Enable the **External Storage Support** app
+4. Navigate to administration settings in user icon dropdown -> external storage in left-hand menu
+5. Add a new storage entry:
    - **Type:** Local
    - **Path:** `/mnt/nas/lab118`
    - **Available for:** Selected users/groups
-4. A **green checkmark** confirms Nextcloud can read and write to the folder
+7. A **green checkmark** confirms Nextcloud can read and write to the folder
 
 The folder then appears in the Nextcloud file browser for assigned users.
 
