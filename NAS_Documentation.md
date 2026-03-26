@@ -16,13 +16,12 @@ The NAS runs on an Ubuntu machine using an application called Nextcloud, which m
 2. [Storage Setup](#storage-setup)
 3. [Nextcloud Setup](#nextcloud-setup)
 4. [Connecting Storage to Nextcloud](#connecting-storage-to-nextcloud)
-5. [Access Control & User Management](#access-control--user-management)
-6. [Public Sharing](#public-sharing)
-7. [Nginx Reverse Proxy](#nginx-reverse-proxy)
-8. [Wireless Access](#wireless-access)
-9. [Upload Configuration](#upload-configuration)
-10. [Important Notes](#important-notes)
-11. [Key Concepts & Terminology](#key-concepts--terminology)
+5. [Public Sharing](#public-sharing)
+6. [Nginx Reverse Proxy](#nginx-reverse-proxy)
+7. [Wireless Access](#wireless-access)
+8. [Upload Configuration](#upload-configuration)
+9. [Important Notes](#important-notes)
+10. [Key Concepts & Terminology](#key-concepts--terminology)
 
 ---
 
@@ -61,21 +60,71 @@ Client Device (Wired or Wireless)
 
 The dedicated storage drive was formatted using the **ext4** filesystem — the standard Linux filesystem that supports proper file ownership and UNIX permissions.
 
-The drive was partitioned, formatted, and mounted at `/mnt/nas/`. Within that mount, `lab118` is the folder used by Nextcloud as the primary storage location.
+Partition the drive:
+
+```bash
+sudo fdisk /dev/sdX
+# Inside fdisk: press n (new partition), accept defaults, then w (write)
+```
+
+Format the partition as ext4:
+
+```bash
+sudo mkfs.ext4 /dev/sdX1
+```
+
+Create the mount point and mount the drive:
+
+```bash
+sudo mkdir -p /mnt/nas
+sudo mount /dev/sdX1 /mnt/nas
+```
+
+Create the `lab118` folder used by Nextcloud:
+
+```bash
+sudo mkdir -p /mnt/nas/lab118
+```
 
 ### Persistent Mounting
 
-To ensure the drive automatically mounts when the server reboots, an entry was added to `/etc/fstab`. This file tells Ubuntu what to mount at boot time. The drive's UUID (a unique identifier) is used instead of a device name like `/dev/sdb`, because device names can change between reboots.
+Get the drive's UUID:
+
+```bash
+sudo blkid /dev/sdX1
+```
+
+Add an entry to `/etc/fstab` so the drive mounts automatically at boot:
+
+```bash
+sudo nano /etc/fstab
+```
+
+Add this line (replace `YOUR-UUID` with the UUID from `blkid`):
+
+```
+UUID=YOUR-UUID  /mnt/nas  ext4  defaults  0  2
+```
+
+Verify the fstab entry mounts correctly without rebooting:
+
+```bash
+sudo mount -a
+```
 
 ### Permissions
 
-Two key permission commands were used:
+Assign ownership of the NAS folder to `root` so that the Snap-confined Nextcloud process can access it:
 
-- **`chown`** — Changes *who owns* a file or folder. The NAS folder was assigned to `root` so that the Snap-confined Nextcloud process could access it.
-- **`chmod`** — Sets *who can read, write, or enter* a file or folder. The permissions were set to `750`:
-  - `7` → Owner (root): full access
-  - `5` → Group (root): read and enter
-  - `0` → Others: no access
+```bash
+sudo chown root:root /mnt/nas/lab118
+```
+
+Set permissions to `750` (owner: full access, group: read and enter, others: none):
+
+```bash
+sudo chmod 750 /mnt/nas/lab118
+```
 
 ---
 
@@ -83,13 +132,19 @@ Two key permission commands were used:
 
 Nextcloud was installed via **Snap**, Ubuntu's sandboxed package manager. The Snap version bundles everything needed — Apache (web server), PHP, and the database — into one isolated environment.
 
+Install Nextcloud via Snap:
+
+```bash
+sudo snap install nextcloud
+```
+
 After installation, Nextcloud is accessible through the browser at:
 
 ```
 http://192.168.0.100
 ```
 
-An admin account was created during initial setup, which controls all settings, users, and storage configurations.
+An admin account was created during initial setup, which controls all settings, users, and storage configurations. Complete the setup wizard in your browser by visiting the URL above and creating your admin credentials.
 
 ---
 
@@ -161,11 +216,55 @@ http://192.168.0.100/lab118  →  http://192.168.0.100:8080/index.php/s/ZzQcTZeJ
 
 ### Setup Summary
 
-1. Nextcloud was moved from port 80 to port 8080 (to free up port 80 for Nginx)
-2. Nginx was installed and configured with two behaviors:
-   - **`/lab118`** → redirect to the public share link
-   - **`/`** → forward all other traffic to Nextcloud on port 8080
-3. Nginx was enabled and restarted
+Move Nextcloud from port 80 to port 8080 to free up port 80 for Nginx:
+
+```bash
+sudo snap set nextcloud ports.http=8080
+```
+
+Install Nginx:
+
+```bash
+sudo apt install nginx -y
+```
+
+Create a new Nginx configuration file:
+
+```bash
+sudo nano /etc/nginx/sites-available/nextcloud
+```
+
+Paste the following configuration (replace the token with your actual share token):
+
+```nginx
+server {
+    listen 80;
+    server_name 192.168.0.100;
+
+    # Clean URL redirect to public share
+    location /lab118 {
+        return 301 http://192.168.0.100:8080/index.php/s/ZzQcTZeJRtafaKn;
+    }
+
+    # Forward all other traffic to Nextcloud on port 8080
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        client_max_body_size 10G;
+    }
+}
+```
+
+Enable the site and restart Nginx:
+
+```bash
+sudo ln -s /etc/nginx/sites-available/nextcloud /etc/nginx/sites-enabled/
+sudo nginx -t
+sudo systemctl restart nginx
+sudo systemctl enable nginx
+```
 
 ### Nginx's Role in This Stack
 
@@ -218,6 +317,32 @@ For uploads consistently larger than a few hundred MB, the **Nextcloud Desktop C
 | PHP upload size        | `snap set nextcloud php.upload-max-filesize` |
 | PHP post size          | `snap set nextcloud php.post-max-size`    |
 | Nginx body size        | `client_max_body_size` in Nginx config    |
+
+Increase PHP upload limits via Snap (example: 10 GB):
+
+```bash
+sudo snap set nextcloud php.upload-max-filesize=10G
+sudo snap set nextcloud php.post-max-size=10G
+```
+
+Increase the Nginx proxy body size limit — edit your Nginx config:
+
+```bash
+sudo nano /etc/nginx/sites-available/nextcloud
+```
+
+Inside the `location /` block, set or update:
+
+```nginx
+client_max_body_size 10G;
+```
+
+Apply the changes:
+
+```bash
+sudo nginx -t
+sudo systemctl reload nginx
+```
 
 ---
 
