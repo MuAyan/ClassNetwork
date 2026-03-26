@@ -60,6 +60,13 @@ Client Device (Wired or Wireless)
 
 The dedicated storage drive was formatted using the **ext4** filesystem — the standard Linux filesystem that supports proper file ownership and UNIX permissions.
 
+Check available drives:
+
+```base
+sudo fdisk -l
+# Find drive based on how much storage it has
+```
+
 Partition the drive:
 
 ```bash
