@@ -155,6 +155,8 @@ http://192.168.0.100
 
 An admin account was created during initial setup, which controls all settings, users, and storage configurations. Complete the setup wizard in your browser by visiting the URL above and creating your admin credentials.
 
+Base Credentials - User: admin        Pass: admin
+
 ---
 
 ## Connecting Storage to Nextcloud
