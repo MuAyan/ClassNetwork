@@ -41,6 +41,8 @@ Client Device (Wired or Wireless)
   /mnt/nas/lab118 (ext4 Disk)
 ```
 
+*Router MUST be setup with DHCP enabled and static IP of 192.168.0.100 assigned to the server*
+
 **Components:**
 
 | Component  | Role                                                         |
