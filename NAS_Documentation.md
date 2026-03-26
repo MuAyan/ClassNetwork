@@ -187,6 +187,7 @@ Once Snap had access, the NAS folder was registered inside Nextcloud:
    - **Type:** Local
    - **Path:** `/mnt/nas/lab118`
    - **Available for:** Selected users/groups
+   - **3 dots** - enable sharing
 7. A **green checkmark** confirms Nextcloud can read and write to the folder
 
 The folder then appears in the Nextcloud file browser for assigned users.
