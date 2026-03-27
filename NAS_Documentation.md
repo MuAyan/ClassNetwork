@@ -196,7 +196,14 @@ The folder then appears in the Nextcloud file browser for assigned users.
 
 ## Public Sharing
 
-A public share link was created for the `lab118` folder, accessible without a Nextcloud account.
+A public share link can be created that is accessible without a nextcloud account: 
+1. Navigate to files -> nas share folder
+2. Click the person icon beside the breadcrumbs
+3. Under external shares, create a public link
+4. Copy the link and paste in a new browser window
+
+
+This method provides access to the share folder to anyone that has the link.
 
 **Key properties of public links:**
 
