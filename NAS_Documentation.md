@@ -41,7 +41,8 @@ Client Device (Wired or Wireless)
   /mnt/nas/lab118 (ext4 Disk)
 ```
 
-*Router MUST be setup with DHCP enabled and static IP of 192.168.0.100 assigned to the server*
+*Router MUST be setup with DHCP enabled and static IP of 192.168.0.100 assigned to the server* <br>
+> *Click [here](./Hardware_docs/MainRouter.md) to setup a router*
 
 **Components:**
 
@@ -316,6 +317,8 @@ The NAS is accessible both via wired connection and wirelessly through a **TP-Li
 **Client Isolation**, if enabled, prevents wireless devices from communicating with other devices on the LAN — including the NAS. Disabling it allows wireless clients to reach the server the same way wired clients do.
 
 The EAP245 bridges wireless traffic directly to the main router's LAN, placing all devices on the same subnet.
+
+> *Click [here](./Hardware_docs/AccessPoint.md) to setup an access point*
 
 ---
 
