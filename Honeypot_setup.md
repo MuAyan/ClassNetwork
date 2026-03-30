@@ -14,6 +14,7 @@ The honeypot runs Cowrie on a Raspberry Pi, presenting a fake SSH server on port
 
 1. [System Architecture](#system-architecture)
 2. [Prerequisites](#prerequisites)
+3. [Pi Preperation](#pi-preparation)
 
 ---
 
@@ -61,7 +62,84 @@ Ubuntu Machine — 192.168.0.xxx
 - Both machines reachable from each other (verify with `ping`)
 - Router configured with DHCP enabled
 
-> *If setting up on virtual machines, both VMs must be on the same virtual network. NAT mode in VMware Workstation satisfies this requirement — host-only does not, as it blocks internet access needed for package installation.*
+
+---
+
+## Pi Preparation
+
+### What This Section Does
+
+Before Cowrie is installed, the Pi requires three things: its real ssh daemon moved off of port 22 for Cowrie to claim, the Python build tools and libraries that Cowrie depends on, and a dedicated underprivileged user account to run Cowrie under. These steps ensure a clean and secure foundation before any honeypot software is configured.
+
+### Move Real SSH to Port 2222
+
+SSH daemons listen on port 22 by default, but Cowrie also needs port 22. that is the port attackers expect to find SSH on, and broadcasting anything on a non-standard port defeats the purpose of the honeypot. The solution is to move the Pi's real SSH daemon to a different port before Cowrie is installed, freeing port 22 for Cowrie to claim.
+
+
+
+Open the SSH daemon configuration file:
+
+```bash
+sudo nano /etc/ssh/ssh_config
+```
+
+`ssh_config` is the main configuration file for the OpenSSH server daemon. It controls what port SSH listens on, which authentication methods are allowed, and which users can connect.
+
+Find the line `#Port 22` and change it to:
+
+```
+Port 2222
+```
+> `#` means this line is commented, which causes it this line to be ignored and default to port 22. remove it so the file reads the line.
+
+Restart the SSH service to apply the change:
+
+```bash
+sudo systemctl restart ssh
+```
+
+**Do not close your current SSH session.** Open a second terminal and verify the new port works before closing anything:
+
+```bash
+ssh -p 2222 pi@<PI_IP>
+```
+The `-p 2222` flag tells the SSH client to connect on port 2222 instead of the default 22. If the connection succeeds, real ssh is confirmed on port 2222 and it is safe to close the original session.
+> All future admin connections to the Pi must use 'p 2222' as port 22 is dedicated to Cowrie.
+
+
+### Install Dependencies
+
+Cowrie is written in Python and relies on several external libraries for cryptography, SSL, and network handling. These must be installed before Cowrie itself can be set up.
+
+```bash
+sudo apt install -y python3-virtualenv libssl-dev libffi-dev build-essential \
+  libpython3-dev python3-minimal authbind python3-pip git
+```
+
+What each package does:
+
+| Package | Purpose |
+|---|---|
+| `python3-virtualenv` | Creates isolated Python environments so Cowrie's dependencies don't conflict with system packages |
+| `libssl-dev` | SSL/TLS development headers required to compile Python cryptography libraries |
+| `libffi-dev` | Foreign Function Interface headers required by several Cowrie dependencies |
+| `build-essential` | C compiler and build tools needed to compile Python extensions from source |
+| `libpython3-dev` | Python development headers required for compiling Python extension modules |
+| `python3-minimal` | Minimal Python 3 runtime |
+| `authbind` | Utility that allows non-root users to bind to privileged ports below 1024 |
+| `python3-pip` | Python package installer used to install Cowrie's Python dependencies |
+| `git` | Version control tool used to clone the Cowrie source code from GitHub |
+
+> `-y` automatically answers yes to any confirmation prompts.
+
+### Create a Dedicated Cowrie User
+
+Cowrie must never run as root or as your personal user account. If Cowrie were running as root and an attacker found a way to escape the fake shell, (a known attack class against honeypots) they would land in a real root shell on the Pi. Running Cowrie under a dedicated unprivileged account limits what an escaped attacker can access.
+
+```bash
+sudo adduser --disabled-password cowrie
+```
+> The `--disabled-password` flag creates the account without a password so no one can log into this account interactively with a password. It can only be accessed through `sudo su`. This was done as this account exists only to run Cowrie.
 
 ---
 
@@ -75,5 +153,6 @@ Ubuntu Machine — 192.168.0.xxx
 | **Fake filesystem** | Cowrie's simulated directory tree (`honeyfs/`) containing realistic fake files that attackers navigate after logging in |
 | **authbind** | A Linux utility that allows non-root processes to bind to privileged ports below 1024 via per-port permission files |
 | **Privileged port** | Any port below 1024 on Linux — only root can bind these by default |
+| **Virtual environment** | An isolated Python environment (`venv`) that keeps Cowrie's dependencies separate from the system |
  
 ---
