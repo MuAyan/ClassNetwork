@@ -15,6 +15,7 @@ The honeypot runs Cowrie on a Raspberry Pi, presenting a fake SSH server on port
 1. [System Architecture](#system-architecture)
 2. [Prerequisites](#prerequisites)
 3. [Pi Preperation](#pi-preparation)
+4. [Cowrie Installation](#cowrie-installation)
 
 ---
 
@@ -69,21 +70,20 @@ Ubuntu Machine — 192.168.0.xxx
 
 ### What This Section Does
 
-Before Cowrie is installed, the Pi requires three things: its real ssh daemon moved off of port 22 for Cowrie to claim, the Python build tools and libraries that Cowrie depends on, and a dedicated underprivileged user account to run Cowrie under. These steps ensure a clean and secure foundation before any honeypot software is configured.
+Before Cowrie is installed, the Pi requires three things: its real ssh daemon moved off of port 22 for Cowrie to claim, the Python build tools and libraries that Cowrie depends on, and a dedicated unprivileged user account to run Cowrie under. These steps ensure a clean and secure foundation before any honeypot software is configured.
 
 ### Move Real SSH to Port 2222
 
-SSH daemons listen on port 22 by default, but Cowrie also needs port 22. that is the port attackers expect to find SSH on, and broadcasting anything on a non-standard port defeats the purpose of the honeypot. The solution is to move the Pi's real SSH daemon to a different port before Cowrie is installed, freeing port 22 for Cowrie to claim.
-
+SSH daemons listen on port 22 by default, but Cowrie also needs port 22. that is the port attackers expect to find SSH on, and presenting anything on a non-standard port defeats the purpose of the honeypot. The solution is to move the Pi's real SSH daemon to a different port before Cowrie is installed, freeing port 22 for Cowrie to claim.
 
 
 Open the SSH daemon configuration file:
 
 ```bash
-sudo nano /etc/ssh/ssh_config
+sudo nano /etc/ssh/sshd_config
 ```
 
-`ssh_config` is the main configuration file for the OpenSSH server daemon. It controls what port SSH listens on, which authentication methods are allowed, and which users can connect.
+`sshd_config` is the main configuration file for the OpenSSH server daemon. It controls what port SSH listens on, which authentication methods are allowed, and which users can connect.
 
 Find the line `#Port 22` and change it to:
 
@@ -143,6 +143,67 @@ sudo adduser --disabled-password cowrie
 
 ---
 
+## Cowrie Installation
+
+### What Is Cowrie?
+
+Cowrie is a medium-interaction SSH and Telnet honeypot. When an attacker attempts to connect to port 22, Cowrie displays a fully functional fake login prompt that accepts any credential. Once authenticated, the attackers appears inside a simulated linux shell backed by a fake filesystem consisting of fake directory listings, fake configuration files, fake system information, etc. Every command typed, every file read, every download attempted is logged in detail. The attacker believes they are on a real compromised server when in fact they are inside a sandbox.
+
+The term "medium-interaction" makes Cowrie a solid choice. A low-Interaction honeypot only simulates a port by responding to connection attempts but does not let the attacker do much, making it easily detectable. A high-interaction honeypot runs a real OS inside a VM or container and lets attackers operate in a real environment, which provides better data but carries a higher risk. Cowrie sits in the middle by providing a convincing interactive shell experience without exposing any real system resources.
+
+### Installation Steps
+
+Switch to the cowrie user:
+
+```bash
+sudo su - cowrie
+```
+
+> `sudo su - cowrie` switches the current session to the cowrie user account. The `-` flag loads a full login environment, including the cowrie user's home directory and shell settings.
+
+Clone the Cowrie repository from GitHub:
+
+```bash
+git clone https://github.com/cowrie/cowrie
+cd cowrie
+```
+
+#### The following commands in this section run as the cowrie user, not as your personal account.
+
+
+Create an isolated Python virtual environment for Cowrie.
+
+```bash
+python3 -m venv cowrie-env
+```
+
+Active the virtual environment
+
+```bash
+source cowrie-env/bin/activate
+```
+
+> A virtual environment is an isolated copy of Python with its own separate set of installed packages. Without this, installing Cowrie's dependencies would modify Python system-wide, which can break other software. The `(cowrie-env)` prefix that appears in the terminal prompt confirms the environment is active.
+
+Install Cowrie's Python dependencies:
+
+```bash
+pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+> `pip install --upgrade pip` updates pip itself to the latest version first, which prevents compatibility warnings during the next step. `pip install -r requirements.txt` reads the `requirements.txt` file in the Cowrie directory which is a list of every Python package Cowrie depends on, and installs all of them.
+
+Install Cowrie itself as a package:
+
+```bash
+pip install -e .
+```
+
+> The previous step installed Cowrie's dependencies but not Cowrie itself. `pip install -e .` installs Cowrie from the local directory in editable mode. Without it, Cowrie commands such as `Cowrie start` would return `Command not found`.
+
+---
+
 ## Key Concepts & Terminology
  
 | Term | Definition |
@@ -154,5 +215,6 @@ sudo adduser --disabled-password cowrie
 | **authbind** | A Linux utility that allows non-root processes to bind to privileged ports below 1024 via per-port permission files |
 | **Privileged port** | Any port below 1024 on Linux — only root can bind these by default |
 | **Virtual environment** | An isolated Python environment (`venv`) that keeps Cowrie's dependencies separate from the system |
+| **Editable install** | A `pip install -e .` that registers a local package's entry point commands into the active virtual environment |
  
 ---
