@@ -17,6 +17,9 @@ The honeypot runs Cowrie on a Raspberry Pi, presenting a fake SSH server on port
 3. [Pi Preperation](#pi-preparation)
 4. [Cowrie Installation](#cowrie-installation)
 5. [Cowrie Configuration](#cowrie-configuration)
+6. [Binding Port 22 with Authbind](#binding-port-22-with-authbind)
+7. [Important Notes](#important-notes)
+8. [Key Concepts & Terminology](#key-concepts--terminology)
 
 ---
 
@@ -255,6 +258,99 @@ url = http://<GRAYLOG_MACHINE_IP>:12201/gelf
 
 ---
 
+## Binding Port 22 with Authbind
+
+### Why Authbind Is Needed
+
+On Linux, any port below 1024 is considered a privileged port. Only processes running as root are allowed to bind to these ports by default. This is a security measure as it prevents unprivileged processes from impersonating well-known services like SSH (22), HTTP (80), or HTTPS (443).
+
+Cowrie must run as the unprivileged `cowrie` user, not root. But it also needs to bind port 22. These two requirements conflict. `authbind` resolves this by granting a specific user permission to bind a specific port without running as root. It works through a file in `/etc/authbind/byport/`. If a file named after the port number exists and is owned by a given user, that user is allowed to bind that port.
+
+### Setup
+
+Exit back to your regular user first as the following commands require sudo, then create the permission file for port 22:
+
+```bash
+exit
+sudo touch /etc/authbind/byport/22
+sudo chown cowrie /etc/authbind/byport/22
+sudo chmod 770 /etc/authbind/byport/22
+```
+
+`sudo touch /etc/authbind/byport/22` creates an empty file named `22` in the authbind configuration directory. The filename is the port number, authbind checks for the existence of this file when a process tries to bind that port.
+
+`sudo chown cowrie /etc/authbind/byport/22` transfers ownership of the file to the cowrie user. Authbind only grants the bind permission to the user who owns the file.
+
+`sudo chmod 770` sets the file permissions to allow the owner (cowrie) and group to read, write, and execute, while blocking all others. The execute bit on the file is what authbind checks to determine if the bind is permitted.
+
+### Starting Cowrie
+
+Switch back to the cowrie user, activate the virtual environment, and start Cowrie through authbind:
+
+```bash
+sudo su - cowrie
+cd cowrie
+source cowrie-env/bin/activate
+authbind --deep cowrie start
+```
+
+`authbind --deep` wraps the following command so that any process it spawns also inherits the port binding permission. The `--deep` flag is required because Cowrie uses Twisted, which spawns child processes. 
+> Without `--deep`, only the parent process gets the permission and Twisted's worker processes fail to bind the port.
+
+`cowrie start` launches Cowrie as a background daemon. It reads `etc/cowrie.cfg`, starts the fake SSH service on the configured port, and begins accepting connections.
+
+Verify Cowrie is running:
+
+```bash
+cowrie status
+```
+
+To stop Cowrie:
+
+```bash
+cowrie stop
+```
+
+### Test the Honeypot
+
+From another machine on the network, connect to port 22 on the Pi:
+
+```bash
+ssh root@<PI_IP>
+```
+
+Cowrie displays a fake login prompt. Enter any credential such as `root` / `123456`, Cowrie accepts it. Once inside the fake shell, commands like `ls`, `whoami`, and `cat /etc/passwd` return realistic fake output. The session is being fully logged.
+
+Confirm the session was captured in the JSON log:
+
+```bash
+tail -f ~/cowrie/var/log/cowrie/cowrie.json
+```
+
+`tail -f` follows the file in real time, printing new lines as they are appended. Each SSH event - connection, login attempt, command, disconnect - produces a separate JSON entry.
+
+Confirm the graylog output engine loaded correctly:
+
+```bash
+tail -20 ~/cowrie/var/log/cowrie/cowrie.log
+```
+
+The line `Loaded output engine: graylog` must be present. If it is missing, the `[output_graylog]` section in `cowrie.cfg` is not being read correctly. Check that `enabled = true` and the `url` field are set under `[output_graylog]`.
+
+---
+
+## Important Notes
+
+- **`pip install -e .` is required after `pip install -r requirements.txt`.** The requirements install only Cowrie's dependencies, not Cowrie itself. Without the editable install step, the `cowrie` command is not registered in the virtual environment and the honeypot cannot be started.
+
+- **The virtual environment must be active when running Cowrie commands.** If `cowrie start` returns command not found after a reboot or new session, run `source ~/cowrie/cowrie-env/bin/activate` first before running any `cowrie` commands.
+
+- **authbind ownership is critical.** The file `/etc/authbind/byport/22` must be owned by the `cowrie` user with permissions `770`. Any deviation prevents Cowrie from binding port 22 and it will silently fail to start on that port.
+
+
+- **Cowrie's graylog output plugin uses GELF HTTP, not GELF UDP.** The `[output_graylog]` section requires a `url` field pointing to `http://<IP>:12201/gelf`. The Graylog input must be set to GELF HTTP to match. Using `host` and `port` fields or creating a GELF UDP input will result in no logs appearing with no error message.
+
+---
 
 ## Key Concepts & Terminology
  
