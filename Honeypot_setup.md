@@ -16,6 +16,7 @@ The honeypot runs Cowrie on a Raspberry Pi, presenting a fake SSH server on port
 2. [Prerequisites](#prerequisites)
 3. [Pi Preperation](#pi-preparation)
 4. [Cowrie Installation](#cowrie-installation)
+5. [Cowrie Configuration](#cowrie-configuration)
 
 ---
 
@@ -203,6 +204,57 @@ pip install -e .
 > The previous step installed Cowrie's dependencies but not Cowrie itself. `pip install -e .` installs Cowrie from the local directory in editable mode. Without it, Cowrie commands such as `Cowrie start` would return `Command not found`.
 
 ---
+## Cowrie Configuration
+
+### What the Configuration File Controls
+
+Everything that Cowrie does is controlled by `cowrie.cfg`. This includes what hostnames attackers see when they log in, what port Cowrie listens on, which output plugins are enabled, and where logs are sent. The repository ships a template called `cowrie.cfg.dist`. This must be copied to `cowrie.cfg` before any changes are made because Cowrie only reads `cowrie.cfg`.
+
+Copy the file:
+
+```bash
+cp etc/cowrie.cfg.dist etc/cowrie.cfg
+```
+
+Open it:
+
+```bash
+nano etc/cowrie.cfg
+```
+
+Set the following values:
+
+```ini
+[honeypot]
+# The hostname attackers see when they connect
+hostname = ubuntu-server
+
+[ssh]
+# Port Cowrie listens on, must match the port authbind is configured for
+listen_endpoints = tcp:22:interface=0.0.0.0
+
+[output_jsonlog]
+enabled = true
+
+[output_graylog]
+enabled = true
+url = http://<GRAYLOG_MACHINE_IP>:12201/gelf
+```
+
+### What Each Setting Does
+
+**`hostname`** sets the fake hostname that attackers see in the shell prompt when they log in. Setting it to something simple like `ubuntu-server` makes the honeypot look like a real machine rather than a trap.
+
+**`listen_endpoints`** tells Cowrie which port and interface to listen on. `tcp:22:interface=0.0.0.0` means listen on TCP port 22 on ALL network interfaces. Port 22 is the standard SSH port - attackers will hit this port first. `0.0.0.0` means accept connections from any IP address.
+> authbind grants permission to bind a specific port number. If listen_endpoints says tcp:22 but authbind was configured for a different port, Cowrie will fail to bind with a permission error.
+
+**`output_jsonlog`** enables Cowrie's built-in JSON log file at `var/log/cowrie/cowrie.json`. This is the local log, every session is written here whether Graylog is running or not. It serves as a backup and is useful for direct inspection with `tail` or `cat`
+
+**`output_graylog`** enables the Graylog output plugin. When enabled, a copy of every log event is sent to Graylog in real time over HTTP. The `url` field must point to the `/gelf` endpoint on the Graylog machine at port 12201. Cowrie's graylog plugin sends logs as HTTP POST requests formatted as GELF. This is important as Cowrie's built-in Graylog plugin only supports HTTP post with a url field with protocol, ip, port, and path (`/gelf`) clearly defined.
+> Using a different format such as `host` and `port` fields will silently fail.
+
+---
+
 
 ## Key Concepts & Terminology
  
@@ -216,5 +268,8 @@ pip install -e .
 | **Privileged port** | Any port below 1024 on Linux — only root can bind these by default |
 | **Virtual environment** | An isolated Python environment (`venv`) that keeps Cowrie's dependencies separate from the system |
 | **Editable install** | A `pip install -e .` that registers a local package's entry point commands into the active virtual environment |
+| **GELF** | Graylog Extended Log Format — a structured JSON log format that preserves arbitrary key-value fields for rich log shipping |
+| **GELF HTTP** | The transport method Cowrie uses to POST GELF-formatted log entries to Graylog over HTTP |
+| **Graylog** | A log management platform that ingests, indexes, searches, and visualizes log data through a web interface |
  
 ---
