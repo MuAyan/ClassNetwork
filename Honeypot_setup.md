@@ -1,6 +1,6 @@
 # Cowrie Honeypot + Graylog Setup Documentation
 
-### Ubuntu 24.04 + Raspberry Pi OS — SSH Honeypot with Centralized Logging
+### Ubuntu 24.04 + Raspberry Pi OS - SSH Honeypot with Centralized Logging
 
 ---
 
@@ -18,8 +18,9 @@ The honeypot runs Cowrie on a Raspberry Pi, presenting a fake SSH server on port
 4. [Cowrie Installation](#cowrie-installation)
 5. [Cowrie Configuration](#cowrie-configuration)
 6. [Binding Port 22 with Authbind](#binding-port-22-with-authbind)
-7. [Important Notes](#important-notes)
-8. [Key Concepts & Terminology](#key-concepts--terminology)
+7. [Graylog Installation](#graylog-installation)
+8. [Important Notes](#important-notes)
+9. [Key Concepts & Terminology](#key-concepts--terminology)
 
 ---
 
@@ -28,17 +29,17 @@ The honeypot runs Cowrie on a Raspberry Pi, presenting a fake SSH server on port
 ```
 Internet / LAN
       ↓
-Raspberry Pi — 192.168.0.xxx                                     Attacker
+Raspberry Pi - 192.168.0.xxx                                     Attacker
  ├── Port 22   → Cowrie (fake SSH, attacker-facing)     ←    SSH into port 22
  └── Port 2222 → Real SSH (admin access)
       ↓
-      │  GELF HTTP — port 12201 
+      │  GELF HTTP - port 12201 
       ↓
-Ubuntu Machine — 192.168.0.xxx
+Ubuntu Machine - 192.168.0.xxx
  └── Graylog
       ├── OpenSearch (log indexing)
       ├── MongoDB (metadata)
-      └── Web dashboard — port 9000
+      └── Web dashboard - port 9000
 ```
 
 *Both machines must be on the same subnet with IPs provided by a router configured with DHCP.* <br>
@@ -51,10 +52,10 @@ Ubuntu Machine — 192.168.0.xxx
 | Component    | Role                                                                  |
 |--------------|-----------------------------------------------------------------------|
 | Raspberry Pi | Host running Cowrie and exposing the fake SSH service                 |
-| Cowrie       | Medium-interaction SSH honeypot — logs credentials and commands       |
+| Cowrie       | Medium-interaction SSH honeypot - logs credentials and commands       |
 | authbind     | Allows a non-root process to bind to privileged ports below 1024      |
 | Ubuntu       | Host operating system running the Graylog stack                       |
-| Graylog      | Log management platform — ingests, parses, and visualizes Cowrie logs |
+| Graylog      | Log management platform - ingests, parses, and visualizes Cowrie logs |
 | OpenSearch   | Search and indexing backend used by Graylog                           |
 | MongoDB      | Database storing Graylog configuration and metadata                   |
 
@@ -339,6 +340,85 @@ The line `Loaded output engine: graylog` must be present. If it is missing, the 
 
 ---
 
+## Graylog Installation
+
+### What Is Graylog?
+
+Graylog is a centralized log management platform. Its role in this setup is to take in every Cowrie log - logins, commands, file downloads, session durations, feed it into a searchable database, and display them on a live dashboard. transforms raw JSON log files into a visual interface showing different attacker patterns. Which credentials are most commonly tried, which commands are run post-login, and which IPs are most active are just some of Graylog's indexing features.
+
+Graylog is not a single application, it is a stack of three components that operate and work together:
+
+- **MongoDB** stores Graylog's own configuration data: user accounts, dashboard layouts, stream definitions, and alert rules. It does not store the actual log messages.
+- **OpenSearch** is the search and indexing engine that stores and indexes the log data. Every log message that Graylog receives is written to OpenSearch which makes it quickly searchable.
+- **Graylog server** is the application layer that sits between the two. It is responsible for receiving incoming logs, parsing and sorting them, writes them to OpenSearch, reads Graylog's own config from MongoDB, and presents a web interface.
+
+
+All three must be running for the stack to function. If any one stops, Graylog loses its backend.
+
+### Install Java
+
+Graylog and OpenSearch are both Java applications. Java 17 is required:
+
+```bash
+sudo apt install -y apt-transport-https openjdk-17-jre-headless uuid-runtime pwgen curl dirmngr
+```
+
+| Package | Purpose |
+|---|---|
+| `apt-transport-https` | Allows `apt` to download packages from HTTPS repositories, required for the MongoDB and OpenSearch repos |
+| `openjdk-17-jre-headless` | Java 17 runtime - required by both Graylog and OpenSearch |
+| `uuid-runtime` | Generates UUIDs used internally by Graylog |
+| `pwgen` | Generates random strings used for Graylog's required secrets |
+| `curl` | Used to download GPG keys for the MongoDB and OpenSearch repositories |
+| `dirmngr` | Manages GPG keys used to verify package signatures |
+
+### Install MongoDB
+
+MongoDB stores Graylog's configuration, user data, and stream metadata. 
+> The version available in Ubuntu's default repositories is too old for Graylog 6.0, so the official MongoDB 6.0 repository must be added manually.
+
+Add the MongoDB GPG key so Ubuntu can verify packages from the MongoDB repository:
+
+```bash
+curl -fsSL https://www.mongodb.org/static/pgp/server-6.0.asc | \
+  sudo gpg --dearmor -o /usr/share/keyrings/mongodb-server-6.0.gpg
+```
+
+`curl -fsSL` downloads the GPG key silently, failing cleanly if the download fails. The key is piped to `gpg --dearmor`, which converts it from ASCII armored format to binary and saves it to `/usr/share/keyrings/`.
+> This file is referenced in the next step so `apt` knows which key to use when verifying MongoDB packages.
+
+Add the MongoDB 6.0 repository to apt's sources:
+
+```bash
+echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-6.0.gpg ] \
+  https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/6.0 multiverse" | \
+  sudo tee /etc/apt/sources.list.d/mongodb-org-6.0.list
+```
+
+This writes a new repository definition file to `/etc/apt/sources.list.d/`. The `signed-by` field references the GPG key downloaded above.
+`jammy` refers to Ubuntu 22.04's codename, which Ubuntu 24.04 is compatible with for this repository.
+> apt uses this to verify that packages from this repository were signed by MongoDB and have not been tampered with.
+
+Install MongoDB and enable it as a system service:
+
+```bash
+sudo apt update
+sudo apt install -y mongodb-org
+sudo systemctl enable mongod
+sudo systemctl start mongod
+```
+> `enable` configures MongoDB to start automatically on boot, `start` starts it immediately without requiring a reboot.
+
+Verify it is running:
+
+```bash
+sudo systemctl status mongod
+```
+
+The output should show **active (running)**. 
+> If it shows failed or inactive, check `sudo journalctl -u mongod` for error details.
+
+
 ## Important Notes
 
 - **`pip install -e .` is required after `pip install -r requirements.txt`.** The requirements install only Cowrie's dependencies, not Cowrie itself. Without the editable install step, the `cowrie` command is not registered in the virtual environment and the honeypot cannot be started.
@@ -346,7 +426,6 @@ The line `Loaded output engine: graylog` must be present. If it is missing, the 
 - **The virtual environment must be active when running Cowrie commands.** If `cowrie start` returns command not found after a reboot or new session, run `source ~/cowrie/cowrie-env/bin/activate` first before running any `cowrie` commands.
 
 - **authbind ownership is critical.** The file `/etc/authbind/byport/22` must be owned by the `cowrie` user with permissions `770`. Any deviation prevents Cowrie from binding port 22 and it will silently fail to start on that port.
-
 
 - **Cowrie's graylog output plugin uses GELF HTTP, not GELF UDP.** The `[output_graylog]` section requires a `url` field pointing to `http://<IP>:12201/gelf`. The Graylog input must be set to GELF HTTP to match. Using `host` and `port` fields or creating a GELF UDP input will result in no logs appearing with no error message.
 
@@ -361,11 +440,14 @@ The line `Loaded output engine: graylog` must be present. If it is missing, the 
 | **Cowrie** | A medium-interaction SSH honeypot that simulates a real Linux shell using a fake filesystem |
 | **Fake filesystem** | Cowrie's simulated directory tree (`honeyfs/`) containing realistic fake files that attackers navigate after logging in |
 | **authbind** | A Linux utility that allows non-root processes to bind to privileged ports below 1024 via per-port permission files |
-| **Privileged port** | Any port below 1024 on Linux — only root can bind these by default |
+| **Privileged port** | Any port below 1024 on Linux - only root can bind these by default |
 | **Virtual environment** | An isolated Python environment (`venv`) that keeps Cowrie's dependencies separate from the system |
 | **Editable install** | A `pip install -e .` that registers a local package's entry point commands into the active virtual environment |
-| **GELF** | Graylog Extended Log Format — a structured JSON log format that preserves arbitrary key-value fields for rich log shipping |
+| **GELF** | Graylog Extended Log Format: a structured JSON log format that preserves arbitrary key-value fields for rich log shipping |
 | **GELF HTTP** | The transport method Cowrie uses to POST GELF-formatted log entries to Graylog over HTTP |
 | **Graylog** | A log management platform that ingests, indexes, searches, and visualizes log data through a web interface |
+| **Input** | A Graylog listener configured to receive log messages over a specific protocol and port |
+| **OpenSearch** | A search and analytics engine that acts as Graylog's log storage and indexing backend |
+| **MongoDB** | A NoSQL database storing Graylog's own configuration, users, streams, and dashboard metadata - not the log data itself |
  
 ---
