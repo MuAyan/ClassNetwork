@@ -42,7 +42,7 @@ Client Device (Wired or Wireless)
 ```
 
 *Router MUST be setup with DHCP enabled and static IP of 192.168.0.100 assigned to the server* <br>
-> *Click [here](./Hardware_docs/MainRouter.md) to setup a router*
+> *Click [here](../Hardware_docs/MainRouter.md) to setup a router*
 
 **Components:**
 
