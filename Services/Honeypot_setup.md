@@ -44,7 +44,7 @@ Ubuntu Machine - 192.168.0.xxx
 ```
 
 *Both machines must be on the same subnet with IPs provided by a router configured with DHCP.* <br>
-> *Click [here](./Hardware_docs/MainRouter.md) to set up a router*
+> *Click [here](../Hardware_docs/MainRouter.md) to set up a router*
 
 ---
 
