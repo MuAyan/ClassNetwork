@@ -344,7 +344,7 @@ The line `Loaded output engine: graylog` must be present. If it is missing, the 
 
 ### What Is Graylog?
 
-Graylog is a centralized log management platform. Its role in this setup is to take in every Cowrie log - logins, commands, file downloads, session durations, feed it into a searchable database, and display them on a live dashboard. transforms raw JSON log files into a visual interface showing different attacker patterns. Which credentials are most commonly tried, which commands are run post-login, and which IPs are most active are just some of Graylog's indexing features.
+Graylog is a centralized log management platform. Its role in this setup is to take in every Cowrie log - logins, commands, file downloads, session durations, feed it into a searchable database, and display them on a live dashboard. It transforms raw JSON log files into a visual interface showing different attacker patterns. Which credentials are most commonly tried, which commands are run post-login, and which IPs are most active are just some of Graylog's indexing features.
 
 Graylog is not a single application, it is a stack of three components that operate and work together:
 
@@ -418,6 +418,165 @@ sudo systemctl status mongod
 The output should show **active (running)**. 
 > If it shows failed or inactive, check `sudo journalctl -u mongod` for error details.
 
+### Install OpenSearch
+
+Opensearch is the search and indexing engine that is responsible for storing Cowrie's actual log data. It is a fork of Elasticsearch maintained by AWS as an open-source project. Graylog uses it as its log storage backend.
+
+Add the OpenSearch GPG key:
+
+```bash
+curl -o- https://artifacts.opensearch.org/publickeys/opensearch.pgp | \
+  sudo gpg --dearmor -o /usr/share/keyrings/opensearch-keyring.gpg
+```
+
+Add the OpenSearch 2.x repository:
+
+```bash
+echo "deb [signed-by=/usr/share/keyrings/opensearch-keyring.gpg] \
+  https://artifacts.opensearch.org/releases/bundle/opensearch/2.x/apt stable main" | \
+  sudo tee /etc/apt/sources.list.d/opensearch-2.x.list
+```
+
+Install OpenSearch. The environment variable sets a temporary admin password required by the installer:
+
+```bash
+sudo apt update
+sudo OPENSEARCH_INITIAL_ADMIN_PASSWORD=$(tr -dc A-Z-a-z-0-9_@#%^-_=+ < /dev/urandom | head -c${1:-32}) \
+  apt install opensearch -y
+```
+
+`tr -dc A-Z-a-z-0-9_@#%^-_=+` filters random bytes from `/dev/urandom` to produce a string containing only the specified characters. `head -c 32` takes the first 32 characters. The result is assigned as an environment variable that the OpenSearch installer requires to set an initial admin password. 
+> This password is only used during installation and is not needed afterward since OpenSearch security is disabled in the next step.
+
+Configure OpenSearch for a single-node Graylog deployment:
+
+```bash
+sudo nano /etc/opensearch/opensearch.yml
+```
+
+Set the following values:
+
+```yaml
+cluster.name: graylog
+node.name: node-1
+network.host: 127.0.0.1
+http.port: 9200
+discovery.type: single-node
+plugins.security.disabled: true
+action.auto_create_index: false
+```
+
+What each setting does:
+
+| Setting | Purpose |
+|---|---|
+| `cluster.name: graylog` | Names the OpenSearch cluster. Graylog uses this to identify which cluster to connect to |
+| `node.name: node-1` | Names this node within the cluster. Required for single-node setups |
+| `network.host: 127.0.0.1` | Restricts OpenSearch to only accept connections from localhost. It should never be exposed to the network |
+| `http.port: 9200` | The port OpenSearch listens on for HTTP requests from Graylog |
+| `discovery.type: single-node` | Tells OpenSearch not to attempt to discover or join other nodes. Required for single-node deployments |
+| `plugins.security.disabled: true` | Disables OpenSearch's built-in TLS and authentication layer. Required so Graylog can connect over plain HTTP on localhost |
+| `action.auto_create_index: false` | Prevents OpenSearch from automatically creating new indexes. Graylog manages its own index creation |
+
+Enable and start OpenSearch:
+
+```bash
+sudo systemctl enable opensearch
+sudo systemctl start opensearch
+```
+
+Verify it is responding:
+
+```bash
+curl -s http://localhost:9200
+```
+
+`curl` sends an HTTP GET request to OpenSearch's REST API. A JSON response containing `"cluster_name" : "graylog"` confirms OpenSearch is running and configured correctly. 
+> If nothing is returned, OpenSearch is still starting. Wait 30 seconds and try again.
+
+
+### Install Graylog
+
+Download the Graylog repository package:
+
+```bash
+wget https://packages.graylog2.org/repo/packages/graylog-6.0-repository_latest.deb
+```
+
+Install the package, adding it to the Gralog repository to apt's sources and installs its GPG key:
+
+```bash
+sudo dpkg -i graylog-6.0-repository_latest.deb
+```
+
+Refresh the package lists and install Graylog server:
+
+```bash
+sudo apt update
+sudo apt install -y graylog-server
+```
+
+
+### Configure Graylog
+
+Graylog requires two cryptographic secrets to be set before it will start. These are not optional as Graylog will not launch if either is missing or too short.
+
+Generate the secrets:
+
+```bash
+# password_secret - must be at least 96 characters
+pwgen -N 1 -s 96
+
+# root_password_sha2 - SHA256 hash of your chosen admin password
+echo -n "yourpassword" | sha256sum
+```
+
+> `pwgen -N 1 -s 96` generates one completely random 96-character string. This becomes the `password_secret`: a server-side secret used internally by Graylog to encrypt session tokens and other sensitive data. It is never entered by a user.
+
+> `echo -n "yourpassword" | sha256sum` hashes the chosen admin password using SHA256. Replace `yourpassword` with your actual password. The `-n` flag prevents `echo` from appending a newline character. Without it, the hash would include the newline and not match when you type the password in the browser. The output is a 64-character hex string followed by `  -`. Only the hex string goes into the config file.
+
+Open the Graylog configuration file:
+
+```bash
+sudo nano /etc/graylog/server/server.conf
+```
+
+Set these four values:
+
+```ini
+password_secret = <output of pwgen>
+root_password_sha2 = <output of sha256sum, without the trailing ' -'>
+http_bind_address = 0.0.0.0:9000
+elasticsearch_hosts = http://127.0.0.1:9200
+```
+
+| Setting | Purpose |
+|---|---|
+| `password_secret` | Server-side encryption secret. Must be at least 96 characters, randomly generated |
+| `root_password_sha2` | SHA256 hash of the admin password. Used to verify the password entered at the login page |
+| `http_bind_address` | The address and port the Graylog web interface binds to. `0.0.0.0` means accept connections from any IP |
+| `elasticsearch_hosts` | The URL of the OpenSearch backend, Must be set explicitly or Graylog enters preflight mode and blocks the UI |
+
+> `elasticsearch_hosts` must be set explicitly even though Graylog is connecting to OpenSearch. Without this line, Graylog enters preflight mode on startup and blocks all web UI access with a basic auth popup instead of showing the login page.
+
+Start Graylog:
+
+```bash
+sudo systemctl enable graylog-server
+sudo systemctl start graylog-server
+```
+
+Monitor the startup log:
+
+```bash
+sudo journalctl -fu graylog-server
+```
+
+> `journalctl -fu graylog-server` follows the systemd journal for the Graylog service in real time. Wait until the line `Graylog server up and running` appears before attempting to log in.
+
+Open a browser and navigate to `http://<UBUNTU_IP>:9000`. Log in with username `admin` and the plain text password used when generating the SHA256 hash, not the hash itself. The hash is how Graylog stores the password internally; the plain text is what you type in the browser.
+
+---
 
 ## Important Notes
 
@@ -429,7 +588,16 @@ The output should show **active (running)**.
 
 - **Cowrie's graylog output plugin uses GELF HTTP, not GELF UDP.** The `[output_graylog]` section requires a `url` field pointing to `http://<IP>:12201/gelf`. The Graylog input must be set to GELF HTTP to match. Using `host` and `port` fields or creating a GELF UDP input will result in no logs appearing with no error message.
 
+- **`elasticsearch_hosts` must be set in `server.conf`** even when using OpenSearch. Without it, Graylog starts in preflight mode and the web UI shows a basic auth popup instead of the login page.
+
+- **OpenSearch security must be explicitly disabled for local single-node deployments.** The `plugins.security.disabled: true` setting in `opensearch.yml` is required. Without it, Graylog cannot connect to OpenSearch over plain HTTP on localhost.
+
+- **Graylog requires both secrets set before it will start.** A missing or incorrectly formatted `password_secret` or `root_password_sha2` causes Graylog to exit immediately with no useful error in the UI. Check `journalctl` if the web interface never loads.
+
+- **MongoDB, OpenSearch, and Graylog must all be running simultaneously** for the stack to function. If any one service is stopped, Graylog loses its backend and stops accepting or displaying logs.
+  
 ---
+
 
 ## Key Concepts & Terminology
  
@@ -449,5 +617,10 @@ The output should show **active (running)**.
 | **Input** | A Graylog listener configured to receive log messages over a specific protocol and port |
 | **OpenSearch** | A search and analytics engine that acts as Graylog's log storage and indexing backend |
 | **MongoDB** | A NoSQL database storing Graylog's own configuration, users, streams, and dashboard metadata - not the log data itself |
- 
+| **Preflight mode** | A Graylog startup state triggered when backend connectivity is not configured - blocks the web UI with a basic auth popup |
+| **`systemctl`** | The Linux command used to manage systemd services - start, stop, restart, enable, and check status |
+| **`journalctl`** | The Linux command used to read systemd service logs - useful for diagnosing startup failures |
+| **`pwgen`** | A command-line tool that generates cryptographically random strings, used here for Graylog's `password_secret` |
+| **eventid** | A Cowrie log field identifying the type of event logged - e.g., `cowrie.login.failed`, `cowrie.command.input` |
+| **`sshd_config`** | The OpenSSH server daemon configuration file - controls port, authentication methods, and allowed users |
 ---
