@@ -19,8 +19,9 @@ The honeypot runs Cowrie on a Raspberry Pi, presenting a fake SSH server on port
 5. [Cowrie Configuration](#cowrie-configuration)
 6. [Binding Port 22 with Authbind](#binding-port-22-with-authbind)
 7. [Graylog Installation](#graylog-installation)
-8. [Important Notes](#important-notes)
-9. [Key Concepts & Terminology](#key-concepts--terminology)
+8. [Connecting Cowrie to Graylog](#connecting-cowrie-to-graylog)
+9. [Important Notes](#important-notes)
+10. [Key Concepts & Terminology](#key-concepts--terminology)
 
 ---
 
@@ -575,6 +576,45 @@ sudo journalctl -fu graylog-server
 > `journalctl -fu graylog-server` follows the systemd journal for the Graylog service in real time. Wait until the line `Graylog server up and running` appears before attempting to log in.
 
 Open a browser and navigate to `http://<UBUNTU_IP>:9000`. Log in with username `admin` and the plain text password used when generating the SHA256 hash, not the hash itself. The hash is how Graylog stores the password internally; the plain text is what you type in the browser.
+
+---
+
+## Connecting Cowrie to Graylog
+
+### How the Pipeline Works
+
+Cowrie does not directly write to Graylog's database. Instead, it sends each log event formatted as a GELF JSON message over http to a listener called an input that runs inside Graylog. The input receives the message, Graylog parses it, and OpenSearch indexes it. From there it is then searchable in the Graylog web UI.
+
+GELF (Graylog Extended Log Format) is a structured JSON format designed specifically for log shipping. Unlike plain syslog, GELF preserves arbitrary key-value fields — so Cowrie can include fields like `username`, `password`, `src_ip`, and `input` (the command typed) as separate searchable fields rather than embedding them in a flat string.
+
+Cowrie's built-in graylog output plugin uses GELF HTTP, it POSTs each log entry as JSON to an HTTP endpoint. The Graylog input must be configured to match this transport method exactly.
+
+### Create a GELF HTTP Input
+
+In the Graylog web UI:
+
+1. Navigate to **System → Inputs**
+2. Select **GELF HTTP** from the dropdown
+   > this must be GELF HTTP, not GELF UDP
+4. Click **Launch new input**
+5. Set the title to `Cowrie`, bind address to `0.0.0.0`, port to `12201`
+6. Click **Save**, the input should show as **Running**
+
+The input is now listening on port 12201 for incoming GELF HTTP POST requests. When Cowrie logs a session event, it sends an HTTP POST to `http://<GRAYLOG_IP>:12201/gelf` and this input receives it.
+
+### Verify the Pipeline
+
+From any machine on the network, SSH into the honeypot on port 22 and run a few commands. In Graylog, navigate to **Search**, set the time range to **Last 5 minutes**, and search. Log entries from Cowrie should appear with fields including `src_ip`, `username`, `password`, `input`, and `eventid`.
+
+The `eventid` field identifies the type of event:
+
+| eventid | Meaning |
+|---|---|
+| `cowrie.session.connect` | A new connection was made to the honeypot |
+| `cowrie.login.failed` | A login attempt was made with incorrect credentials |
+| `cowrie.login.success` | A login attempt succeeded |
+| `cowrie.command.input` | A command was typed in the fake shell |
+| `cowrie.session.closed` | The session ended |
 
 ---
 
