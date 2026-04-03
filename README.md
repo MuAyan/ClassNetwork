@@ -13,7 +13,7 @@ This repository serves the purpose of organizing and explaining parts of a local
 [NAS](./Services/NAS_Documentation.md) setup and configuration  &mdash;  Complete
  > Nextcloud configured on Ubuntu.
 
-[Honeypot](./Services/Honeypot_setup.md) setup and configuration  &mdash;  Complete
+[Honeypot](./Services/Honeypot_setup.md) setup and configuration  &mdash;  Setup in-progress
  > Graylog configured on Ubuntu, Cowrie setup on Raspberry pi 4.
 
 ## Hardware
