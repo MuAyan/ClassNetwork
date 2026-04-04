@@ -14,14 +14,15 @@ The honeypot runs Cowrie on a Raspberry Pi, presenting a fake SSH server on port
 
 1. [System Architecture](#system-architecture)
 2. [Prerequisites](#prerequisites)
-3. [Pi Preperation](#pi-preparation)
+3. [Pi Preparation](#pi-preparation)
 4. [Cowrie Installation](#cowrie-installation)
 5. [Cowrie Configuration](#cowrie-configuration)
 6. [Binding Port 22 with Authbind](#binding-port-22-with-authbind)
 7. [Graylog Installation](#graylog-installation)
 8. [Connecting Cowrie to Graylog](#connecting-cowrie-to-graylog)
-9. [Important Notes](#important-notes)
-10. [Key Concepts & Terminology](#key-concepts--terminology)
+9. [Cowrie systemd Service](#cowrie-systemd-service)
+10. [Important Notes](#important-notes)
+11. [Key Concepts & Terminology](#key-concepts--terminology)
 
 ---
 
@@ -96,7 +97,7 @@ Find the line `#Port 22` and change it to:
 ```
 Port 2222
 ```
-> `#` means this line is commented, which causes it this line to be ignored and default to port 22. remove it so the file reads the line.
+> `#` means this line is commented, which causes this line to be ignored and default to port 22. remove it so the file reads the line.
 
 Restart the SSH service to apply the change:
 
@@ -110,7 +111,7 @@ sudo systemctl restart ssh
 ssh -p 2222 pi@<PI_IP>
 ```
 The `-p 2222` flag tells the SSH client to connect on port 2222 instead of the default 22. If the connection succeeds, real ssh is confirmed on port 2222 and it is safe to close the original session.
-> All future admin connections to the Pi must use 'p 2222' as port 22 is dedicated to Cowrie.
+> All future admin connections to the Pi must use '-p 2222' as port 22 is dedicated to Cowrie.
 
 
 ### Install Dependencies
@@ -183,7 +184,7 @@ Create an isolated Python virtual environment for Cowrie.
 python3 -m venv cowrie-env
 ```
 
-Active the virtual environment
+Activate the virtual environment
 
 ```bash
 source cowrie-env/bin/activate
@@ -504,7 +505,7 @@ Download the Graylog repository package:
 wget https://packages.graylog2.org/repo/packages/graylog-6.0-repository_latest.deb
 ```
 
-Install the package, adding it to the Gralog repository to apt's sources and installs its GPG key:
+Install the package, adding it to the Graylog repository to apt's sources and installs its GPG key:
 
 ```bash
 sudo dpkg -i graylog-6.0-repository_latest.deb
@@ -617,6 +618,89 @@ The `eventid` field identifies the type of event:
 | `cowrie.session.closed` | The session ended |
 
 ---
+
+## Cowrie systemd Service
+
+### Why a systemd Service Is Needed
+
+Right now Cowrie only runs if someone manually switches to the cowrie user, activates the virtual environment, and runs `authbind --deep cowrie start`. If the Pi loses power or reboots, the honeypot goes down and stays down until someone SSHs in and starts it again manually. That is not acceptable for a permanent classroom asset.
+
+systemd is the Linux init system that manages all services and background processes. It starts services at boot, restarts them if they crash, and provides a consistent interface for checking their status. Registering Cowrie as a systemd service means it starts automatically on every boot and recovers on its own if it crashes, with no manual intervention required.
+
+### Create the Unit File
+
+A unit file is a configuration file that tells systemd how to run a service - what user to run it as, what command to execute, when to start it, and how to handle failures. Create the Cowrie unit file at `/etc/systemd/system/cowrie.service`:
+
+```bash
+sudo nano /etc/systemd/system/cowrie.service
+```
+
+Paste the following:
+
+```ini
+[Unit]
+Description=Cowrie SSH Honeypot
+After=network.target
+
+[Service]
+User=cowrie
+WorkingDirectory=/home/cowrie/cowrie
+ExecStart=/usr/bin/authbind --deep /home/cowrie/cowrie/cowrie-env/bin/cowrie start
+ExecStop=/home/cowrie/cowrie/cowrie-env/bin/cowrie stop
+Restart=on-failure
+RestartSec=10
+Type=forking
+PIDFile=/home/cowrie/cowrie/var/run/cowrie.pid
+
+[Install]
+WantedBy=multi-user.target
+```
+
+What each setting does:
+
+| Setting | Purpose |
+|---|---|
+| `After=network.target` | Delays Cowrie startup until the network interface is up, preventing a bind failure on port 22 at boot |
+| `User=cowrie` | Runs the service as the cowrie user, not root |
+| `WorkingDirectory` | Sets the working directory to the Cowrie installation folder before starting |
+| `ExecStart` | The full command systemd runs to start Cowrie, using the full path to authbind and the cowrie binary inside the venv |
+| `ExecStop` | The command systemd runs to cleanly stop Cowrie |
+| `Restart=on-failure` | Automatically restarts Cowrie if it crashes |
+| `RestartSec=10` | Waits 10 seconds before attempting a restart |
+| `Type=forking` | Tells systemd that the start command will fork a background daemon and exit, which is how `cowrie start` works |
+| `PIDFile` | The path to Cowrie's PID file, which systemd uses to track the background process after the start command exits |
+| `WantedBy=multi-user.target` | Registers Cowrie to start during normal multi-user boot |
+
+> `ExecStart` uses the full path to the cowrie binary inside the virtual environment instead of a bare `cowrie` command. systemd does not activate virtual environments, so a bare `cowrie` would resolve to nothing and the service would fail to start.
+
+> `Type=forking` is required because `cowrie start` launches a background daemon - it forks and exits. Without this, systemd assumes the service died when the start command returns and immediately attempts a restart loop.
+
+### Enable and Start the Service
+
+Tell systemd to load the new unit file, then enable and start the service:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable cowrie
+sudo systemctl start cowrie
+```
+
+`sudo systemctl daemon-reload` tells systemd to re-read all unit files. This must be run any time a unit file is created or modified, otherwise systemd will not see the changes.
+
+`sudo systemctl enable cowrie` registers Cowrie to start automatically on every boot.
+
+`sudo systemctl start cowrie` starts Cowrie immediately without requiring a reboot.
+
+Verify the service is running:
+
+```bash
+sudo systemctl status cowrie
+```
+
+The output should show **active (running)**. From this point forward, Cowrie starts on boot and restarts automatically on failure. Manual `sudo su - cowrie` and `authbind --deep cowrie start` are no longer needed.
+
+---
+
 
 ## Important Notes
 
