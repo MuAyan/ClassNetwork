@@ -627,6 +627,41 @@ Right now Cowrie only runs if someone manually switches to the cowrie user, acti
 
 systemd is the Linux init system that manages all services and background processes. It starts services at boot, restarts them if they crash, and provides a consistent interface for checking their status. Registering Cowrie as a systemd service means it starts automatically on every boot and recovers on its own if it crashes, with no manual intervention required.
 
+### Create the Startup Script
+
+systemd does not activate Python virtual environments on its own. Calling the cowrie binary directly from the unit file leaves the environment incomplete, causing the service to fail. The fix is a shell script that sets up the environment correctly before handing off to Cowrie. systemd calls this script instead of calling Cowrie directly.
+
+Create the script:
+
+```bash
+sudo nano /home/cowrie/start-cowrie.sh
+```
+
+Paste the following:
+
+```bash
+#!/bin/bash
+cd /home/cowrie/cowrie
+export PATH=/home/cowrie/cowrie/cowrie-env/bin:/usr/bin:/bin
+source cowrie-env/bin/activate
+authbind --deep cowrie-env/bin/cowrie start
+```
+
+`cd /home/cowrie/cowrie` moves into the Cowrie directory first. Cowrie resolves paths like `honeyfs/` and `var/run/` relative to its working directory - without this, it cannot find its own files and fails immediately.
+
+`export PATH=...` prepends the virtual environment's bin directory to PATH so any subprocess Cowrie spawns can find the right binaries.
+
+`source cowrie-env/bin/activate` activates the virtual environment for the current shell session.
+
+`authbind --deep cowrie-env/bin/cowrie start` launches Cowrie through authbind using the full path to the cowrie binary inside the venv. `--deep` ensures all child processes inherit the port 22 binding permission, which is required because Cowrie uses Twisted and spawns child processes internally.
+
+Make the script executable and set the correct owner:
+
+```bash
+sudo chmod +x /home/cowrie/start-cowrie.sh
+sudo chown cowrie /home/cowrie/start-cowrie.sh
+```
+
 ### Create the Unit File
 
 A unit file is a configuration file that tells systemd how to run a service - what user to run it as, what command to execute, when to start it, and how to handle failures. Create the Cowrie unit file at `/etc/systemd/system/cowrie.service`:
@@ -645,8 +680,7 @@ After=network.target
 [Service]
 User=cowrie
 WorkingDirectory=/home/cowrie/cowrie
-ExecStart=/usr/bin/authbind --deep /home/cowrie/cowrie/cowrie-env/bin/cowrie start
-ExecStop=/home/cowrie/cowrie/cowrie-env/bin/cowrie stop
+ExecStart=/bin/bash /home/cowrie/start-cowrie.sh
 Restart=on-failure
 RestartSec=10
 Type=forking
@@ -663,15 +697,12 @@ What each setting does:
 | `After=network.target` | Delays Cowrie startup until the network interface is up, preventing a bind failure on port 22 at boot |
 | `User=cowrie` | Runs the service as the cowrie user, not root |
 | `WorkingDirectory` | Sets the working directory to the Cowrie installation folder before starting |
-| `ExecStart` | The full command systemd runs to start Cowrie, using the full path to authbind and the cowrie binary inside the venv |
-| `ExecStop` | The command systemd runs to cleanly stop Cowrie |
+| `ExecStart` | Calls bash to run the startup script, which sets up the environment and launches Cowrie |
 | `Restart=on-failure` | Automatically restarts Cowrie if it crashes |
 | `RestartSec=10` | Waits 10 seconds before attempting a restart |
 | `Type=forking` | Tells systemd that the start command will fork a background daemon and exit, which is how `cowrie start` works |
 | `PIDFile` | The path to Cowrie's PID file, which systemd uses to track the background process after the start command exits |
 | `WantedBy=multi-user.target` | Registers Cowrie to start during normal multi-user boot |
-
-> `ExecStart` uses the full path to the cowrie binary inside the virtual environment instead of a bare `cowrie` command. systemd does not activate virtual environments, so a bare `cowrie` would resolve to nothing and the service would fail to start.
 
 > `Type=forking` is required because `cowrie start` launches a background daemon - it forks and exits. Without this, systemd assumes the service died when the start command returns and immediately attempts a restart loop.
 
