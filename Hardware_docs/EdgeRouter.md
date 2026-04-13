@@ -12,7 +12,8 @@ Seperating WAN and LAN to 2 routers allows the LAN router to focus on internal t
 ## Table of Contents
 
 1. [System Architecture](#system-architecture)
-2. [Configuration Settings](#configuration-settings)
+2. [WAN Configuration](#wan-configuration)
+3. [LAN Configuration](#lan-configuration)
 
 ## 1. System Architecture
 
@@ -23,9 +24,19 @@ Seperating WAN and LAN to 2 routers allows the LAN router to focus on internal t
           ↓ (LAN port)
      Main Router 
 ```
-## Configuration Settings
+## WAN Configuration
 
 1. Navigate to quick setup in left-hand bar.
 2. Select WAN port that is connected physically to ISP.
 3. Set connection type to Dynamic IP.
 4. Click next.
+
+---
+## LAN Configuration
+
+1. Navigate to Network -> LAN in left-hand bar.
+2. Scroll down to network list and click edit under Operation.
+3. Set IP address to something different than main router, same subnet. (192.168.0.xxx)
+4. Scroll down to DHCP and select DHCP relay
+5. Set Status to Enabled
+6. Change Server Address to the default gateway set on main router
