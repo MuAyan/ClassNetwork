@@ -1,4 +1,4 @@
-** Jot Notes **
+## Jot Notes 
 1. set hostname to mission-portal
 2. new host configured at 127.0.1.1 as mission0portal.orion.local mission-portal in /etc/hosts
 3. install and enable apache web server
@@ -10,7 +10,7 @@ Port 22
 PermitRootLogin yes
 PasswordAuthentication yes
 Banner /etc/ssh/orion_banner
-8. create a new banner in /etc/ssh/orion_banner
+8. create a new banner in /etc/ssh/orion_banner/
 *****************************************************
 *   ORION RESEARCH STATION – MISSION CONTROL NODE   *
 *   Unauthorized access is strictly prohibited.     *
