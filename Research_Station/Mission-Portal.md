@@ -1,4 +1,4 @@
-## Jot Notes 
+## Notes 
 1. set hostname to mission-portal
 2. new host configured at 127.0.1.1 as mission0portal.orion.local mission-portal in /etc/hosts
 3. install and enable apache web server
