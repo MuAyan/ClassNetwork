@@ -48,3 +48,5 @@ vsftpd_log_file=/var/log/vsftpd_full.log
 
 14. restart ```systemctl restart vsftpd```
 15. ```sudo ufw allow 21/tcp``` & ```sudo ufw allow 60000:65000/tcp``` to allow these ports through the firewalls
+16. ```sudo apt-get install iptables``` & ```sudo apt-get install iptables-persistent```
+17. ```sudo iptables -A INPUT -p tcp --dport 22 -j ACCEPT``` & ```sudo iptables -A INPUT -p tcp --dport 80 -j ACCEPT``` & ```sudo iptables -A INPUT -p tcp --dport 80 -j ACCEPT```
