@@ -5,21 +5,23 @@
 4. ```sudo chown -R -f www-data:www-data /var/www/html``` & ```sudo chmod -R 770 /var/www/html``` to give permissions to the apache web server files.
 5. create a fake portal page at /var/www/html/index.html for the attacker
 6. create fake directories that show up in the directory listing
-7. enable directory listing by editing "Options FollowSymLinks" to "Options Indexes FollowSymLinks" in /etc/apache2/apache2.conf and restart the server
-8. set these in /etc/ssh/sshd_config to attract attackers:
+7. enable directory listing by editing "Options FollowSymLinks" to "Options Indexes FollowSymLinks" in ```/etc/apache2/apache2.conf``` and restart the server
+    ```sudo apt install openssh-server -y```
+9. set these in ```/etc/ssh/sshd_config``` to attract attackers:
 Port 22
 PermitRootLogin yes
 PasswordAuthentication yes
+PermitEmptyPasswords - yes
 Banner /etc/ssh/orion_banner
-9. create a new banner in /etc/ssh/orion_banner/
+10. create a new banner in ```/etc/ssh/orion_banner/```
 *****************************************************
 *   ORION RESEARCH STATION – MISSION CONTROL NODE   *
 *   Unauthorized access is strictly prohibited.     *
 *   All sessions are logged and monitored.          *
 *****************************************************
 9. create a decoy user: 
-sudo useradd -m -s /bin/bash missionadmin
-echo "missionadmin:orion2024" | sudo chpasswd
+```sudo useradd -m -s /bin/bash missionadmin```
+```echo "missionadmin:orion2024" | sudo chpasswd```
 10. restart apache2
 11. sudo apt install vsftpd
 12. sudo systemctl enable vsftpd
@@ -46,4 +48,3 @@ vsftpd_log_file=/var/log/vsftpd_full.log
 
 14. restart ```systemctl restart vsftpd```
 15. ```sudo ufw allow 21/tcp``` & ```sudo ufw allow 60000:65000/tcp``` to allow these ports through the firewalls
-16. 
