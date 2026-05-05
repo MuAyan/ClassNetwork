@@ -52,3 +52,4 @@ vsftpd_log_file=/var/log/vsftpd_full.log
 17. ```sudo iptables -A INPUT -p tcp --dport 22 -j ACCEPT``` & ```sudo iptables -A INPUT -p tcp --dport 80 -j ACCEPT``` & ```sudo iptables -A INPUT -p tcp --dport 80 -j ACCEPT```
 18. ```iptables -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT``` & ```sudo iptables -A FORWARD -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT``` & ```iptables -A FORWARD -i eth0 -j DROP```
 19. ```sudo nano /etc/sysctl.conf``` - add: ```net.ipv4.ip_forward=1```. apply: ```sysctl -p```
+20. ```iptables --policy OUTPUT DROP
